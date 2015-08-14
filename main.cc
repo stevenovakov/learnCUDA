@@ -118,38 +118,43 @@ int main(int argc, char * argv[])
 
   float * input_one_d, * input_two_d, * output_d;
 
-  cudaMalloc((void **) &input_one_d, buffer_mem_size);
-  cudaMalloc((void **) &input_two_d, buffer_mem_size);
-  cudaMalloc((void **) &output_d, buffer_mem_size);
+  cudaError_t err;
+  cudaSetDevice(0);
+
+  err = cudaMalloc((void **) &input_one_d, buffer_mem_size);
+  if (err != cudaSuccess)
+      printf("Error (malloc 1): %s\n", cudaGetErrorString(err));
+  err = cudaMalloc((void **) &input_two_d, buffer_mem_size);
+  if (err != cudaSuccess)
+    printf("Error (malloc 2): %s\n", cudaGetErrorString(err));
+  err = cudaMalloc((void **) &output_d, buffer_mem_size);
+  if (err != cudaSuccess)
+      printf("Error (malloc 3): %s\n", cudaGetErrorString(err));
 
   dim3 grid(n_chunk);
   dim3 blocks(1);
-
-  cudaError_t err;
-
-  cudaSetDevice(0);
 
   for (uint32_t c = 0; c < n_chunks; c++)
   {
     err = cudaMemcpy((void*) input_one_d, input_one.data() + (c * n_chunk),
       buffer_mem_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
-      printf("Error (115): %s\n", cudaGetErrorString(err));
+      printf("Error (memcpy htod 1): %s\n", cudaGetErrorString(err));
     err = cudaMemcpy((void*) input_two_d, input_two.data() + (c * n_chunk),
       buffer_mem_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess)
-      printf("Error (119): %s\n", cudaGetErrorString(err));
+      printf("Error (memcpy htod 2): %s\n", cudaGetErrorString(err));
 
     runSummer(grid, blocks, input_one_d, input_two_d, output_d);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
-      printf("Error (122): %s\n", cudaGetErrorString(err));
+      printf("Error (kernel): %s\n", cudaGetErrorString(err));
 
     err = cudaMemcpy(output.data() + (c * n_chunk), (void*) output_d,
       buffer_mem_size, cudaMemcpyDeviceToHost);
     if (err != cudaSuccess)
-      printf("Error (128): %s\n", cudaGetErrorString(err));
+      printf("Error (memcpy dtoh 1): %s\n", cudaGetErrorString(err));
   }
 
   cudaDeviceSynchronize();
