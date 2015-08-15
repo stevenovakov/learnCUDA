@@ -147,10 +147,6 @@ int main(int argc, char * argv[])
 
     runSummer(grid, blocks, input_one_d, input_two_d, output_d);
 
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
-      printf("Error (kernel): %s\n", cudaGetErrorString(err));
-
     err = cudaMemcpy(output.data() + (c * n_chunk), (void*) output_d,
       buffer_mem_size, cudaMemcpyDeviceToHost);
     if (err != cudaSuccess)

@@ -18,9 +18,31 @@
 #     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 #include <iostream>
-
+#include <stdio.h>
 #include <cuda.h>
 #include "summer.h"
+
+// Macro to catch CUDA errors in kernel launches
+// from user njuffa on nvidia developer forums
+// https://devtalk.nvidia.com/default/topic/865548/
+// cuda-programming-and-performance/problem-lanuching-simple-kernel/
+#define CHECK_LAUNCH_ERROR()                                          \
+do {                                                                  \
+    /* Check synchronous errors, i.e. pre-launch */                   \
+    cudaError_t err = cudaGetLastError();                             \
+    if (cudaSuccess != err) {                                         \
+        fprintf (stderr, "Cuda error in file '%s' in line %i : %s.\n",\
+                 __FILE__, __LINE__, cudaGetErrorString(err) );       \
+        exit(EXIT_FAILURE);                                           \
+    }                                                                 \
+    /* Check asynchronous errors, i.e. kernel failed (ULF) */         \
+    err = cudaThreadSynchronize();                                    \
+    if (cudaSuccess != err) {                                         \
+        fprintf (stderr, "Cuda error in file '%s' in line %i : %s.\n",\
+                 __FILE__, __LINE__, cudaGetErrorString( err) );      \
+        exit(EXIT_FAILURE);                                           \
+    }                                                                 \
+} while (0)
 
 // summing kernel
 __global__ void Summer(
@@ -43,4 +65,5 @@ void runSummer(
 )
 {
   Summer<<<grid, blocks>>>(input_one_d, intput_two_d, output_d);
+  CHECK_LAUNCH_ERROR();
 }
