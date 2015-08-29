@@ -42,6 +42,7 @@ int main(int argc, char * argv[])
 {
   int gpus;
   cudaGetDeviceCount(&gpus);
+  bool overlap = true;
 
   for (int d = 0; d < gpus; d++) {
     cudaDeviceProp prop;
@@ -59,6 +60,14 @@ int main(int argc, char * argv[])
       prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
     printf("Max Block Size (%d, %d, %d)\n\n",
       prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+
+    overlap &= prop.deviceOverlap;
+  }
+
+  if (!overlap)
+  {
+    puts("prop.deviceOverlap not TRUE for all devices. Exiting...");
+    return 0;
   }
 
   // Hanndle CLI parameters, if any
@@ -77,7 +86,7 @@ int main(int argc, char * argv[])
     return 0;
   }
 
-  float total_size = config.data_size;
+  float total_size = config.data_size * gpus;
   // total size of each input array, in MB
   float chunk_size = config.chunk_size;
   // size of each chunk summed by a single kernel execution
@@ -116,41 +125,63 @@ int main(int argc, char * argv[])
 
   // CUDA memory transfers and kernel execution
 
-  float * input_one_d, * input_two_d, * output_d;
+  std::vector<float*> ones(gpus);
+  std::vector<float*> twos(gpus);
+  std::vector<float*> outs(gpus);
+
 
   cudaError_t err;
-  cudaSetDevice(0);
 
-  err = cudaMalloc((void **) &input_one_d, buffer_mem_size);
-  if (err != cudaSuccess)
-      printf("Error (malloc 1): %s\n", cudaGetErrorString(err));
-  err = cudaMalloc((void **) &input_two_d, buffer_mem_size);
-  if (err != cudaSuccess)
-    printf("Error (malloc 2): %s\n", cudaGetErrorString(err));
-  err = cudaMalloc((void **) &output_d, buffer_mem_size);
-  if (err != cudaSuccess)
-      printf("Error (malloc 3): %s\n", cudaGetErrorString(err));
+  for (int d = 0; d < gpus; d++)
+  {
+    cudaSetDevice(d);
+    err = cudaMalloc((void **) &(ones.at(d)), buffer_mem_size);
+    if (err != cudaSuccess)
+        printf("Error (malloc 1): %s\n", cudaGetErrorString(err));
+    err = cudaMalloc((void **) &(twos.at(d)), buffer_mem_size);
+    if (err != cudaSuccess)
+      printf("Error (malloc 2): %s\n", cudaGetErrorString(err));
+    err = cudaMalloc((void **) &(outs.at(d)), buffer_mem_size);
+    if (err != cudaSuccess)
+        printf("Error (malloc 3): %s\n", cudaGetErrorString(err));
+  }
 
   dim3 grid(n_chunk);
   dim3 blocks(1);
 
+  // cudaMemcpyAsync is used, but no stream is specified
+
   for (uint32_t c = 0; c < n_chunks; c++)
   {
-    err = cudaMemcpy((void*) input_one_d, input_one.data() + (c * n_chunk),
-      buffer_mem_size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess)
-      printf("Error (memcpy htod 1): %s\n", cudaGetErrorString(err));
-    err = cudaMemcpy((void*) input_two_d, input_two.data() + (c * n_chunk),
-      buffer_mem_size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess)
-      printf("Error (memcpy htod 2): %s\n", cudaGetErrorString(err));
+    for (int d = 0; d < gpus; d++)
+    {
+      cudaSetDevice(d);
+      err = cudaMemcpyAsync((void*) ones.at(d),
+        input_one.data() + (d * n_gpu) + (c * n_chunk),
+          buffer_mem_size, cudaMemcpyHostToDevice);
+      if (err != cudaSuccess)
+        printf("Error (memcpy htod 1): %s\n", cudaGetErrorString(err));
+      err = cudaMemcpyAsync((void*) twos.at(d),
+        input_two.data() + (d * n_gpu) + (c * n_chunk),
+          buffer_mem_size, cudaMemcpyHostToDevice);
+      if (err != cudaSuccess)
+        printf("Error (memcpy htod 2): %s\n", cudaGetErrorString(err));
+    }
 
-    runSummer(grid, blocks, input_one_d, input_two_d, output_d);
+    for (int d = 0; d < gpus; d++)
+    {
+      cudaSetDevice(d);
+      runSummer(grid, blocks, ones.at(d), twos.at(d), outs.at(d));
+    }
 
-    err = cudaMemcpy(output.data() + (c * n_chunk), (void*) output_d,
-      buffer_mem_size, cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess)
-      printf("Error (memcpy dtoh 1): %s\n", cudaGetErrorString(err));
+    for (int d = 0; d < gpus; d++)
+    {
+      cudaSetDevice(d);
+      err = cudaMemcpyAsync(output.data() + (d * n_gpu) + (c * n_chunk),
+        (void*) outs.at(d), buffer_mem_size, cudaMemcpyDeviceToHost);
+      if (err != cudaSuccess)
+        printf("Error (memcpy dtoh 1): %s\n", cudaGetErrorString(err));
+    }
   }
 
   cudaDeviceSynchronize();
@@ -174,10 +205,12 @@ int main(int argc, char * argv[])
   }
 
   // cleanup
-
-  cudaFree(input_one_d);
-  cudaFree(input_two_d);
-  cudaFree(output_d);
+  for (int d = 0; d < gpus; d++)
+  {
+    cudaFree(ones.at(d));
+    cudaFree(twos.at(d));
+    cudaFree(outs.at(d));
+  }
 
   return 0;
 }

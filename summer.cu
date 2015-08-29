@@ -31,14 +31,14 @@ do {                                                                  \
     /* Check synchronous errors, i.e. pre-launch */                   \
     cudaError_t err = cudaGetLastError();                             \
     if (cudaSuccess != err) {                                         \
-        fprintf (stderr, "Cuda error in file '%s' in line %i : %s.\n",\
+        fprintf (stderr, "Cuda error (sunc) in file '%s' in line %i : %s.\n",\
                  __FILE__, __LINE__, cudaGetErrorString(err) );       \
         exit(EXIT_FAILURE);                                           \
     }                                                                 \
     /* Check asynchronous errors, i.e. kernel failed (ULF) */         \
     err = cudaThreadSynchronize();                                    \
     if (cudaSuccess != err) {                                         \
-        fprintf (stderr, "Cuda error in file '%s' in line %i : %s.\n",\
+        fprintf (stderr, "Cuda error (async) in file '%s' in line %i : %s.\n",\
                  __FILE__, __LINE__, cudaGetErrorString( err) );      \
         exit(EXIT_FAILURE);                                           \
     }                                                                 \
