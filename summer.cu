@@ -65,5 +65,5 @@ void runSummer(
 )
 {
   Summer<<<grid, blocks>>>(input_one_d, intput_two_d, output_d);
-  CHECK_LAUNCH_ERROR();
+  //CHECK_LAUNCH_ERROR();
 }
