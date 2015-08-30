@@ -61,9 +61,10 @@ void runSummer(
   dim3 blocks,
   float * input_one_d,
   float * intput_two_d,
-  float * output_d
+  float * output_d,
+  cudaStream_t * stream
 )
 {
-  Summer<<<grid, blocks>>>(input_one_d, intput_two_d, output_d);
+  Summer<<<grid, blocks, 0, *stream>>>(input_one_d, intput_two_d, output_d);
   //CHECK_LAUNCH_ERROR();
 }

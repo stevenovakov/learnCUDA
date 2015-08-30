@@ -21,6 +21,15 @@ rm ./*.log
 
 COMPUTE_PROFILE=1 COMPUTE_PROFILE_CONFIG=nvvp.cfg ./program $1 $2 $3
 
+find . -name 'cuda_profile*.log' | while read FILE;
+do
+  n_lines=$(wc -l < "$FILE");
+  if [ "$n_lines" -lt "8" ]
+  then
+    rm "$FILE"
+  fi
+done
+
 cat cuda_profile_*.log > cuda_profile.log
 
 
