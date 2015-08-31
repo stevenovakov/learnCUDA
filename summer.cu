@@ -67,4 +67,5 @@ void runSummer(
 {
   Summer<<<grid, blocks, 0, *stream>>>(input_one_d, intput_two_d, output_d);
   //CHECK_LAUNCH_ERROR();
+  // comment out unless debugging, there is blocking synchronization
 }
