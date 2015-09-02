@@ -48,22 +48,26 @@ int main(int argc, char * argv[])
   for (int d = 0; d < gpus; d++) {
     cudaGetDeviceProperties(&props.at(d), d);
 
-    cudaDeviceProp prop = props.at(d);
     printf("Device Number: %d\n", d);
-    printf("Device name: %s\n", prop.name);
-    printf("Compute Capability: %d.%d\n", prop.major, prop.minor);
-    printf("asyncEngineCount: %d\n", prop.asyncEngineCount);
+    printf("Device name: %s\n", props.at(d).name);
+    printf("Compute Capability: %d.%d\n", props.at(d).major,
+      props.at(d).minor);
+    printf("asyncEngineCount: %d\n", props.at(d).asyncEngineCount);
     printf("Total Global Memory (kB): %lu\n",
-      prop.totalGlobalMem/1000);
+      props.at(d).totalGlobalMem/1000);
     printf("Max Device Memory Pitch (kB): %lu\n",
-      prop.memPitch/1000);
+      props.at(d).memPitch/1000);
     printf("Max Grid Size (%d, %d, %d)\n",
-      prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
-    printf("Max Block Size: %d\n", prop.maxThreadsPerBlock);
-    printf("Max Block Dims (%d, %d, %d)\n\n",
-      prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+      props.at(d).maxGridSize[0], props.at(d).maxGridSize[1],
+        props.at(d).maxGridSize[2]);
+    printf("Max Block Size (%d, %d, %d)\n\n",
+      props.at(d).maxThreadsDim[0], props.at(d).maxThreadsDim[1],
+        props.at(d).maxThreadsDim[2]);
+    printf("Warp Size: %d\n", props.at(d).warpSize);
+    printf("Max Threads per SMP: %d\n\n",
+      props.at(d).maxThreadsPerMultiProcessor);
 
-    overlap &= prop.deviceOverlap;
+    overlap &= props.at(d).deviceOverlap;
   }
 
   if (!overlap)
@@ -113,53 +117,48 @@ int main(int argc, char * argv[])
   std::uniform_real_distribution<double> distribution(0.0,1.0);
 
   puts("Generating random number sets...\n");
+
   for (uint32_t i = 0; i < n; i++)
   {
     input_one[i] = distribution(generator);
     input_two[i] = distribution(generator);
   }
+
   puts("Number sets complete.\n");
 
-  uint32_t buffer_mem_size = n_chunk * sizeof(float);
+  // Calculate pad for buffers so that block size can be multiple of 1024
+  // (which is a multiple of 32, the warp size)
 
-  printf("N Chunks: %d, Chunk Buffer Size: %d (B)\n",
-    n_chunks, buffer_mem_size);
+  std::vector<uint32_t> pads(gpus);
+  std::vector<uint32_t> buffer_allocate_sizes(gpus);
+  uint32_t buffer_io_size = n_chunk * sizeof(float);
+
+  std::vector<dim3> grids;
+  std::vector<dim3> blocks;
+
+  for (int d = 0; d < gpus; d++)
+  {
+    pads.at(d) = n_chunk % props.at(d).maxThreadsPerBlock;
+
+    grids.push_back(
+      dim3((n_chunk + pads.at(d)) / props.at(d).maxThreadsPerBlock));
+    blocks.push_back(dim3(props.at(d).maxThreadsPerBlock));
+
+    buffer_allocate_sizes.at(d) = (n_chunk + pads.at(d)) * sizeof(float);
+
+    printf("N Chunks: %d, Chunk Buffer Size (Device): %d (B) (%d) \n",
+      n_chunks, buffer_allocate_sizes.at(d), d);
+  }
+
+  //
+  // Allocate device buffer memory
+  //
 
   std::vector<cudaStream_t> streams(gpus);
 
   std::vector<float*> ones(gpus);
   std::vector<float*> twos(gpus);
   std::vector<float*> outs(gpus);
-
-  std::vector<dim3> grids;
-  std::vector<dim3> blocks;
-
-  int max_threads;
-  int temp_threads;
-
-  //
-  // Calculate the highest possible threads/block without any overflow
-  //
-
-  for (int d = 0; d < gpus; d++)
-  {
-    max_threads = props.at(d).maxThreadsPerBlock;
-
-    temp_threads = max_threads;
-
-    while (n_chunk % temp_threads != 0 && temp_threads > 1)
-      temp_threads -= 1;
-
-    grids.push_back(dim3(n_chunk / temp_threads));
-
-    blocks.push_back(dim3(temp_threads));
-
-    printf("Device %d, threads/block: %d\n", d, temp_threads);
-  }
-
-  //
-  // Allocate device buffer memory
-  //
 
   cudaError_t err;
 
@@ -169,13 +168,13 @@ int main(int argc, char * argv[])
 
     cudaStreamCreate(&(streams.at(d)));
 
-    err = cudaMalloc((void **) &(ones.at(d)), buffer_mem_size);
+    err = cudaMalloc((void **) &(ones.at(d)), buffer_allocate_sizes.at(d));
     if (err != cudaSuccess)
         printf("Error (malloc 1): %s\n", cudaGetErrorString(err));
-    err = cudaMalloc((void **) &(twos.at(d)), buffer_mem_size);
+    err = cudaMalloc((void **) &(twos.at(d)), buffer_allocate_sizes.at(d));
     if (err != cudaSuccess)
       printf("Error (malloc 2): %s\n", cudaGetErrorString(err));
-    err = cudaMalloc((void **) &(outs.at(d)), buffer_mem_size);
+    err = cudaMalloc((void **) &(outs.at(d)), buffer_allocate_sizes.at(d));
     if (err != cudaSuccess)
         printf("Error (malloc 3): %s\n", cudaGetErrorString(err));
   }
@@ -191,12 +190,12 @@ int main(int argc, char * argv[])
       cudaSetDevice(d);
       err = cudaMemcpyAsync((void*) ones.at(d),
         input_one + (d * n_gpu) + (c * n_chunk),
-          buffer_mem_size, cudaMemcpyHostToDevice, streams.at(d));
+          buffer_io_size, cudaMemcpyHostToDevice, streams.at(d));
       if (err != cudaSuccess)
         printf("Error (memcpy htod 1): %s\n", cudaGetErrorString(err));
       err = cudaMemcpyAsync((void*) twos.at(d),
         input_two + (d * n_gpu) + (c * n_chunk),
-          buffer_mem_size, cudaMemcpyHostToDevice, streams.at(d));
+          buffer_io_size, cudaMemcpyHostToDevice, streams.at(d));
       if (err != cudaSuccess)
         printf("Error (memcpy htod 2): %s\n", cudaGetErrorString(err));
     }
@@ -213,7 +212,7 @@ int main(int argc, char * argv[])
     {
       cudaSetDevice(d);
       err = cudaMemcpyAsync(output + (d * n_gpu) + (c * n_chunk),
-        (void*) outs.at(d), buffer_mem_size, cudaMemcpyDeviceToHost,
+        (void*) outs.at(d), buffer_io_size, cudaMemcpyDeviceToHost,
           streams.at(d));
       if (err != cudaSuccess)
         printf("Error (memcpy dtoh 1): %s\n", cudaGetErrorString(err));
