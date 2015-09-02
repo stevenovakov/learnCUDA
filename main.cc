@@ -105,11 +105,13 @@ int main(int argc, char * argv[])
     Compute Chunk: %.3f (MB), Total Array Size: %d, GPU Array Size: %d\n",
       total_size, config.data_size, chunk_size, n, n_gpu);
 
-  std::vector<float> input_one, input_two, output;
+  // Allocate pinned (page-locked) host containers
 
-  input_one.resize(n);
-  input_two.resize(n);
-  output.resize(n);
+  float * input_one, * input_two, * output;
+
+  cudaMallocHost((void **) &input_one, n * sizeof(float));
+  cudaMallocHost((void **) &input_two, n * sizeof(float));
+  cudaMallocHost((void **) &output, n * sizeof(float));
 
   std::default_random_engine generator;
   std::uniform_real_distribution<double> distribution(0.0,1.0);
@@ -117,8 +119,8 @@ int main(int argc, char * argv[])
   puts("Generating random number sets...\n");
   for (uint32_t i = 0; i < n; i++)
   {
-    input_one.at(i) = distribution(generator);
-    input_two.at(i) = distribution(generator);
+    input_one[i] = distribution(generator);
+    input_two[i] = distribution(generator);
   }
   puts("Number sets complete.\n");
 
@@ -157,6 +159,7 @@ int main(int argc, char * argv[])
   for (int d = 0; d < gpus; d++)
   {
     cudaSetDevice(d);
+
     err = cudaMalloc((void **) &(ones.at(d)), buffer_allocate_sizes.at(d));
     if (err != cudaSuccess)
         printf("Error (malloc 1): %s\n", cudaGetErrorString(err));
@@ -168,7 +171,7 @@ int main(int argc, char * argv[])
         printf("Error (malloc 3): %s\n", cudaGetErrorString(err));
   }
 
-  // cudaMemcpyAsync is used, but no stream is specified
+  // cudaMemcpyAsync is used, but no stream is specified (all Stream 0)
 
   for (uint32_t c = 0; c < n_chunks; c++)
   {
@@ -176,12 +179,12 @@ int main(int argc, char * argv[])
     {
       cudaSetDevice(d);
       err = cudaMemcpyAsync((void*) ones.at(d),
-        input_one.data() + (d * n_gpu) + (c * n_chunk),
+        input_one + (d * n_gpu) + (c * n_chunk),
           buffer_io_size, cudaMemcpyHostToDevice);
       if (err != cudaSuccess)
         printf("Error (memcpy htod 1): %s\n", cudaGetErrorString(err));
       err = cudaMemcpyAsync((void*) twos.at(d),
-        input_two.data() + (d * n_gpu) + (c * n_chunk),
+        input_two + (d * n_gpu) + (c * n_chunk),
           buffer_io_size, cudaMemcpyHostToDevice);
       if (err != cudaSuccess)
         printf("Error (memcpy htod 2): %s\n", cudaGetErrorString(err));
@@ -196,7 +199,7 @@ int main(int argc, char * argv[])
     for (int d = 0; d < gpus; d++)
     {
       cudaSetDevice(d);
-      err = cudaMemcpyAsync(output.data() + (d * n_gpu) + (c * n_chunk),
+      err = cudaMemcpyAsync(output + (d * n_gpu) + (c * n_chunk),
         (void*) outs.at(d), buffer_io_size, cudaMemcpyDeviceToHost);
       if (err != cudaSuccess)
         printf("Error (memcpy dtoh 1): %s\n", cudaGetErrorString(err));
@@ -219,8 +222,8 @@ int main(int argc, char * argv[])
     uint32_t entry = int_distro(generator);
 
     printf("Entry %d -> %.4f + %.4f = %.4f ? %.4f\n", entry,
-      input_one.at(entry), input_two.at(entry), output.at(entry),
-        input_one.at(entry) + input_two.at(entry));
+      input_one[entry], input_two[entry], output[entry],
+        input_one[entry] + input_two[entry]);
   }
 
   // cleanup
@@ -229,7 +232,13 @@ int main(int argc, char * argv[])
     cudaFree(ones.at(d));
     cudaFree(twos.at(d));
     cudaFree(outs.at(d));
+
+    cudaDeviceReset();
   }
+
+  cudaFree(input_one);
+  cudaFree(input_two);
+  cudaFree(output);
 
   return 0;
 }
