@@ -61,7 +61,8 @@ int main(int argc, char * argv[])
     printf("Max Block Dims (%d, %d, %d)\n",
       prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
     printf("Max Block Size: %d\n", prop.maxThreadsPerBlock);
-    printf("Warp Size: %d\n\n", prop.warpSize);
+    printf("Warp Size: %d\n", prop.warpSize);
+    printf("Max Threads per SMP: %d\n\n", prop.maxThreadsPerMultiProcessor);
   }
 
   cudaGetDeviceProperties(&prop, 0);
