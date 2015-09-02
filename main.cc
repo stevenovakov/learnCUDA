@@ -56,10 +56,11 @@ int main(int argc, char * argv[])
       prop.totalGlobalMem/1000);
     printf("Max Device Memory Pitch (kB): %lu\n",
       prop.memPitch/1000);
-    printf("Max Grid Size (%d, %d, %d)\n",
+    printf("Max Grid Dims (%d, %d, %d)\n",
       prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
-    printf("Max Block Size (%d, %d, %d)\n",
+    printf("Max Block Dims (%d, %d, %d)\n",
       prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+    printf("Max Block Size: %d\n", prop.maxThreadsPerBlock);
     printf("Warp Size: %d\n\n", prop.warpSize);
   }
 
