@@ -52,7 +52,7 @@ $(CPP_OBJECTS): $(OBJDIR)/%.o:%.cc
 	$(CPLR) $(CPP_FLAGS) -c $< -o $@ $(GCC_PTHREAD_BUG_FLAGS)
 
 $(CU_OBJECTS): $(OBJDIR)/%.o:%.cu
-	nvcc -arch=sm_30 -c $< -o $@
+	nvcc -arch=sm_35 -c $< -o $@
 
 $(OBJDIR):
 	@ mkdir -p $(OBJDIR)
