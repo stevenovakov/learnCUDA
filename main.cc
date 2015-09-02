@@ -43,8 +43,9 @@ int main(int argc, char * argv[])
   int gpus;
   cudaGetDeviceCount(&gpus);
 
+  cudaDeviceProp prop;
+
   for (int d = 0; d < gpus; d++) {
-    cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, d);
 
     printf("Device Number: %d\n", d);
@@ -57,9 +58,12 @@ int main(int argc, char * argv[])
       prop.memPitch/1000);
     printf("Max Grid Size (%d, %d, %d)\n",
       prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
-    printf("Max Block Size (%d, %d, %d)\n\n",
+    printf("Max Block Size (%d, %d, %d)\n",
       prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+    printf("Warp Size: %d\n\n", prop.warpSize);
   }
+
+  cudaGetDeviceProperties(&prop, 0);
 
   // Hanndle CLI parameters, if any
 
@@ -109,7 +113,16 @@ int main(int argc, char * argv[])
   }
   puts("Number sets complete.\n");
 
-  uint32_t buffer_mem_size = n_chunk * sizeof(float);
+  //
+  // Calculate pad for buffers so that block size can be multiple of 1024
+  // (which is a multiple of 32, the warp size)
+
+  uint32_t pad = n_chunk % prop.maxThreadsPerBlock;
+
+  dim3 grid((n_chunk + pad) / prop.maxThreadsPerBlock);
+  dim3 blocks(prop.maxThreadsPerBlock);
+
+  uint32_t buffer_mem_size = (n_chunk + pad) * sizeof(float);
 
   printf("N Chunks: %d, Chunk Buffer Size: %d (B)\n",
     n_chunks, buffer_mem_size);
@@ -131,8 +144,7 @@ int main(int argc, char * argv[])
   if (err != cudaSuccess)
       printf("Error (malloc 3): %s\n", cudaGetErrorString(err));
 
-  dim3 grid(n_chunk);
-  dim3 blocks(1);
+  // notice we don't read/write from the padded region: totally fine
 
   for (uint32_t c = 0; c < n_chunks; c++)
   {
