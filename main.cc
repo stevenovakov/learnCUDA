@@ -236,9 +236,9 @@ int main(int argc, char * argv[])
     cudaDeviceReset();
   }
 
-  cudaFree(input_one);
-  cudaFree(input_two);
-  cudaFree(output);
+  cudaFreeHost(input_one);
+  cudaFreeHost(input_two);
+  cudaFreeHost(output);
 
   return 0;
 }
